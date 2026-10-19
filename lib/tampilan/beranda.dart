@@ -120,7 +120,7 @@ class _BerandaState extends State<Beranda> {
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: Text(
-                  'Gagal memuat ringkasan. Periksa URL API, lalu tarik layar ke bawah.',
+                  'Gagal memuat ringkasan. Tarik layar ke bawah untuk mencoba lagi.',
                   style: TextStyle(color: Colors.red, fontSize: 12),
                 ),
               ),

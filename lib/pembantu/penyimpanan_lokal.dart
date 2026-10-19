@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Penyimpanan data sederhana di perangkat.
-/// Dipakai sebagai pengganti API selama URL mockapi belum diisi,
-/// supaya aplikasi tetap bisa dijalankan (data tersimpan di shared_preferences).
+/// Penyimpanan data sederhana di perangkat (shared_preferences).
+/// Seluruh CRUD aplikasi memakai penyimpanan ini, jadi tidak butuh jaringan
+/// dan data bertahan selama aplikasi tidak di-uninstall / logout.
 class PenyimpananLokal {
   final String kunci;
   PenyimpananLokal(this.kunci);

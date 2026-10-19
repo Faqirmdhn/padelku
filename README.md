@@ -1,9 +1,9 @@
 # PadelKu (Flutter, versi Admin)
 
 Aplikasi admin untuk mengelola **lapangan**, **pelanggan**, dan **booking** padel
-(tema hijau). CRUD lengkap untuk 3 tabel, data diambil dari mockapi.io — atau
-disimpan lokal di perangkat selama URL API belum diisi. Login dummy:
-`admin / admin`.
+(tema hijau). CRUD lengkap untuk 3 tabel, **seluruh data disimpan lokal di
+perangkat** (shared_preferences) sehingga jalan tanpa internet dan tanpa backend.
+Login dummy: `admin` / `admin`.
 
 ---
 
@@ -13,9 +13,8 @@ disimpan lokal di perangkat selama URL API belum diisi. Login dummy:
 | --- | --- |
 | Framework | Flutter 3.x (Dart SDK `^3.11.5`) |
 | State management | `StatefulWidget` + `FutureBuilder` (tanpa package tambahan) |
-| HTTP | `dio ^5.7.0` |
-| Penyimpanan lokal | `shared_preferences ^2.3.3` (token login + mode lokal) |
-| Backend | mockapi.io (REST JSON) |
+| Penyimpanan data | `shared_preferences ^2.3.3` (CRUD lokal + sesi login) |
+| Backend | tidak ada — seluruh CRUD lokal |
 | Lint | `flutter_lints ^6.0.0` (`analysis_options.yaml`) |
 | Theme | Material 3 (`useMaterial3: true`) |
 
@@ -41,9 +40,8 @@ lib/
 │   ├── lapangan.dart
 │   └── pelanggan.dart
 ├── pembantu/                    # utilitas bersama
-│   ├── klien_api.dart           # Dio + base URL mockapi + flag apiSiap
-│   ├── penyimpanan_lokal.dart   # CRUD lokal via shared_preferences
-│   ├── info_pengguna.dart       # simpan/hapus token & username
+│   ├── penyimpanan_lokal.dart   # CRUD lokal (read/write JSON per tabel)
+│   ├── info_pengguna.dart       # simpan/hapus sesi login
 │   ├── alat.dart                # rupiah, format tanggal/jam, dialog, snackbar
 │   └── tema.dart                # 4 konstanta warna + buatTema()
 └── tampilan/                    # halaman (screen)
@@ -64,7 +62,7 @@ lib/
 
 test/
 ├── widget_test.dart             # layar login tampil
-└── layanan_lokal_test.dart      # mode lokal + flag apiSiap
+└── layanan_lokal_test.dart      # CRUD lokal untuk 3 tabel
 ```
 
 ---
@@ -72,7 +70,7 @@ test/
 ## 3. Arsitektur Aplikasi
 
 Pola **layered architecture** sederhana, satu arah ke bawah. UI tidak pernah
-memanggil `Dio` atau `SharedPreferences` langsung — selalu lewat `layanan/`.
+memanggil `SharedPreferences` langsung — selalu lewat `layanan/`.
 
 ```
 ┌──────────────────────────────────────────────┐
@@ -83,14 +81,16 @@ memanggil `Dio` atau `SharedPreferences` langsung — selalu lewat `layanan/`.
 ┌──────────────────▼───────────────────────────┐
 │ layanan/  (satu kelas per resource)          │
 │   daftar / ambil / tambah / ubah / hapus     │
-└────────┬──────────────────────────┬──────────┘
-         │ KlienApi.apiSiap == true │ false
-┌────────▼──────────────┐  ┌────────▼──────────────────┐
-│ klien_api.dart (Dio)  │  │ penyimpanan_lokal.dart    │
-│ mockapi.io            │  │ shared_preferences (JSON) │
-└────────┬──────────────┘  └────────┬──────────────────┘
-         │        JSON respons      │
-┌────────▼──────────────────────────▼──────────┐
+└──────────────────┬───────────────────────────┘
+                   │
+┌──────────────────▼───────────────────────────┐
+│ pembantu/penyimpanan_lokal.dart              │
+│   shared_preferences, JSON array per tabel   │
+│   kunci: lokal_lapangan, lokal_pelanggan,    │
+│          lokal_booking                       │
+└──────────────────┬───────────────────────────┘
+                   │ jsonEncode / jsonDecode
+┌──────────────────▼───────────────────────────┐
 │ model/  Lapangan, Pelanggan, Booking         │
 │   fromJson()  <-  toJson()                   │
 └──────────────────────────────────────────────┘
@@ -102,13 +102,13 @@ memanggil `Dio` atau `SharedPreferences` langsung — selalu lewat `layanan/`.
 | --- | --- | --- |
 | `tampilan/` | merender, validasi form, navigasi, loading/error state | hanya model & layanan |
 | `komponen/` | widget kartu/menu yang dipakai lintas halaman | hanya model |
-| `layanan/` | memilih API atau penyimpanan lokal, menangani 404 | model + klien/penyimpanan |
-| `model/` | struktur data, mapping JSON, nilai default | tidak tahu UI/jaringan |
-| `pembantu/` | konfigurasi, utilitas, tema, sesi | tidak tahu UI |
+| `layanan/` | membalik model ↔ penyimpanan lokal, menangani data tak ada | model + penyimpanan |
+| `model/` | struktur data, mapping JSON, nilai default | tidak tahu UI/penyimpanan |
+| `pembantu/` | penyimpanan, sesi, utilitas, tema | tidak tahu UI |
 
-Alasan pemisahan ini: mengganti backend (mockapi → REST lain) cukup mengubah
-`layanan/` dan `klien_api.dart`; mengganti gaya UI cukup mengubah `tampilan/`
-dan `komponen/`.
+Alasan pemisahan ini: mengganti tempat penyimpanan (mis. ke database SQLite
+atau REST) cukup mengubah `layanan/` + `pembantu/penyimpanan_lokal.dart`;
+mengganti gaya UI cukup mengubah `tampilan/` dan `komponen/`.
 
 ---
 
@@ -119,7 +119,7 @@ dan `komponen/`.
 `lib/main.dart:7`
 
 1. `WidgetsFlutterBinding.ensureInitialized()` — wajib sebelum `SharedPreferences`.
-2. `InfoPengguna().ambilToken()` membaca token dari penyimpanan.
+2. `InfoPengguna().ambilToken()` membaca sesi login.
 3. `MaterialApp.home` dipilih otomatis:
    - token `null` → `Masuk` (layar login)
    - token ada → `Beranda` (langsung, tanpa login ulang)
@@ -132,53 +132,49 @@ dan `komponen/`.
   `InfoPengguna().simpan('admin', 'admin')` menulis token + username.
 - Gagal → `AlertDialog` "Username atau Password Tidak Valid".
 - Berhasil → `pushReplacement(Beranda)`.
-- Keluar → `MenuSamping._keluar()`: `InfoPengguna().hapus()` (menghapus seluruh
-  isi prefs) lalu `pushAndRemoveUntil(Masuk)`.
+- Keluar → `MenuSamping._keluar()`: `InfoPengguna().hapus()` lalu
+  `pushAndRemoveUntil(Masuk)`.
 
-> Login tidak memeriksa API, jadi tetap jalan saat mode lokal.
+> **Catatan:** logout (`InfoPengguna().hapus()`) hanya menghapus sesi
+> `token` + `username`; data CRUD lokal tetap tersimpan (dibuktikan
+> `test/info_pengguna_test.dart`).
 
-### 4.3 Alur CRUD (contoh tambah data)
+### 4.3 Penyimpanan data lokal
+
+`lib/pembantu/penyimpanan_lokal.dart`
+
+| Metode | Kerja |
+| --- | --- |
+| `daftar()` | baca JSON array dari prefs → `List<Map<String, dynamic>>` |
+| `ambil(id)` | cari item dengan `id`, `null` bila tidak ada |
+| `tambah(isi)` | buat `id` baru dari `DateTime.now().microsecondsSinceEpoch`, simpan |
+| `ubah(id, isi)` | timpa item pada posisi `id`; bila tidak ada, tambahkan |
+| `hapus(id)` | buang item dari array lalu tulis ulang |
+
+Detail teknis:
+
+- Satu tabel = satu kunci prefs: `lokal_lapangan`, `lokal_pelanggan`,
+  `lokal_booking`, nilai berupa string JSON array.
+- Semua operasi baca → ubah → tulis ulang seluruh array (data kecil, aman).
+- Karena operasi async, `layanan/` selalu mengembalikan `Future`.
+- Data bertahan selama aplikasi tidak di-uninstall dan tidak logout.
+
+### 4.4 Alur CRUD (contoh tambah data)
 
 ```
 FormLapangan._simpan()
-   ├─ _kunci.currentState!.validate()      // validasi form, batal jika gagal
+   ├─ _kunci.currentState!.validate()       // validasi form, batal jika gagal
    ├─ Lapangan(nama..., jenis..., harga...) // susun objek model
    ├─ LayananLapangan().tambah(objek)
-   │     ├─ if (!KlienApi.apiSiap)  → _lokal.tambah(objek.toJson())
-   │     └─ else                    → dio.post('/lapangan', data: json)
-   ├─ model.fromJson(respon)               // hasil berisi id dari server
-   └─ Navigator.pop(context, hasil)        // kirim balik ke halaman asal
+   │     ├─ objek.toJson()
+   │     ├─ _lokal.tambah(json)  -> tambah id, tulis ke prefs
+   │     └─ fromJson(hasil)                 // hasil sudah berisi id
+   └─ Navigator.pop(context, hasil)         // kirim balik ke halaman asal
 Halaman asal: setState(_muat) → FutureBuilder reload daftar
 ```
 
 Pola `pop(context, hasil)` dipakai di semua detail & form, sehingga daftar
 selalu dimuat ulang setelah kembali (`_buka()` → `setState(_muat)`).
-
-### 4.4 Mode API vs Mode Lokal
-
-Penentunya ada di `klien_api.dart`:
-
-```dart
-static bool get apiSiap =>
-    !urlAkunA.contains('GANTI_ID_AKUN_A') &&
-    !urlAkunB.contains('GANTI_ID_AKUN_B');
-```
-
-| Kondisi | `apiSiap` | Perilaku |
-| --- | --- | --- |
-| URL masih placeholder `GANTI_ID_...` | `false` | tidak ada request jaringan; data dibaca/tulis di `shared_preferences` lewat `penyimpanan_lokal.dart` |
-| kedua URL sudah diisi project mockapi | `true` | semua request lewat `Dio` ke mockapi.io |
-
-Catatan penting:
-
-- Kunci prefs: `lokal_lapangan`, `lokal_pelanggan`, `lokal_booking` (nilai JSON
-  array). Login memakai `pref.clear()` sehingga **data lokal ikut terhapus** saat
-  logout.
-- ID lokal dibuat dari `DateTime.now().microsecondsSinceEpoch`; ID mockapi
-  dibuat server.
-- Setelah beralih ke API, data lokal **tidak ikut terbawa** — isi ulang data di
-  server.
-- `404` dari API dianggap "data kosong" (`[]`), bukan error.
 
 ### 4.5 Navigasi
 
@@ -271,12 +267,12 @@ Pola sama dengan lapangan.
 
 ### 5.8 `HalamanBooking` — `tampilan/booking/halaman_booking.dart`
 
-Satu-satunya halaman yang menggabungkan 3 resource.
+Satu-satunya halaman yang menggabungkan 3 tabel.
 
 | Bagian | Isi |
 | --- | --- |
 | Muat data | `Future.wait` booking + lapangan + pelanggan |
-| Penyusunan | dua `Map<String, X>` untuk pencarian `id → objek` (ini buatan join, bukan endpoint relasi) |
+| Penyusunan | dua `Map<String, X>` untuk pencarian `id → objek` (join di sisi UI) |
 | Urutan | `booking.sort` tanggal terbaru di atas |
 | Item | `BookingItem`: nama lapangan, nama pelanggan, tanggal • jam • durasi, total, chip status |
 | Relasi hilang | teks "Data tidak ditemukan" |
@@ -286,7 +282,7 @@ Satu-satunya halaman yang menggabungkan 3 resource.
 
 | Bagian | Isi |
 | --- | --- |
-| Muat relasi | `LayananLapangan().ambil(idLapangan)` dan `LayananPelanggan().ambil(idPelanggan)` — dua request terpisah, keduanya dibungkus `try/catch` |
+| Muat relasi | `LayananLapangan().ambil(idLapangan)` dan `LayananPelanggan().ambil(idPelanggan)` — dua pembacaan terpisah, keduanya dibungkus `try/catch` |
 | Kartu detail | Lapangan, Pelanggan, Tanggal, Jam Mulai, Durasi, Total Bayar (`rupiah`), Status (chip) |
 | Ubah status | hanya saat `dipesan`: **Tandai Selesai** → `selesai`, **Batalkan** → `dibatalkan`, langsung `layananBooking.ubah()` dan state diperbarui |
 | Aksi | **Ubah** → `FormBooking`, **Hapus** → konfirmasi → `pop(true)` |
@@ -315,20 +311,20 @@ Semua halaman daftar memakai tiga state yang sama:
 
 ---
 
-## 6. Model dan Field
+## 6. Model dan Data Tersimpan
 
-Field JSON harus persis dengan ini (nama yang sama dipakai di mockapi).
+Struktur field sama dengan bentuk yang disimpan di prefs (JSON array).
 
-### `lapangan` — `model/lapangan.dart`
+### `lapangan` — `model/lapangan.dart` — kunci `lokal_lapangan`
 
 | JSON | Dart | Tipe | Default |
 | --- | --- | --- | --- |
-| `id` | `id` | `String?` | dibuat server / auto increment lokal |
+| `id` | `id` | `String?` | dibuat `PenyimpananLokal` (timestamp microdetik) |
 | `nama_lapangan` | `namaLapangan` | `String` | `''` |
 | `jenis` | `jenis` | `String` | `'indoor'` |
 | `harga_per_jam` | `hargaPerJam` | `int` (via `keInt`) | `0` |
 
-### `pelanggan` — `model/pelanggan.dart`
+### `pelanggan` — `model/pelanggan.dart` — kunci `lokal_pelanggan`
 
 | JSON | Dart | Tipe | Default |
 | --- | --- | --- | --- |
@@ -336,7 +332,7 @@ Field JSON harus persis dengan ini (nama yang sama dipakai di mockapi).
 | `nama` | `nama` | `String` | `''` |
 | `no_hp` | `noHp` | `String` | `''` |
 
-### `booking` — `model/booking.dart`
+### `booking` — `model/booking.dart` — kunci `lokal_booking`
 
 | JSON | Dart | Tipe | Default |
 | --- | --- | --- | --- |
@@ -351,10 +347,10 @@ Field JSON harus persis dengan ini (nama yang sama dipakai di mockapi).
 
 Aturan model:
 
-- `toJson()` **tidak** mengirim `id` — biar server yang menentukan (mockapi
-  menolak id buatan).
+- `toJson()` **tidak** mengirim `id`; `id` selalu ditambahkan oleh
+  `PenyimpananLokal` saat `tambah()`.
 - `fromJson()` tidak pernah melempar: nilai hilang memakai default, angka lewat
-  `keInt()` (aman terhadap respons `String`).
+  `keInt()` (aman terhadap nilai `String`).
 - `Booking.salinStatus()` menyalin seluruh field, mengganti status saja —
   dipakai tombol ubah status di detail.
 
@@ -375,7 +371,7 @@ Aturan model:
 
 | Fungsi/Widget | Fungsi |
 | --- | --- |
-| `keInt(dynamic)` | amankan konversi int dari API |
+| `keInt(dynamic)` | amankan konversi int |
 | `rupiah(int)` | `150000` → `Rp 150.000` (tanpa locale) |
 | `formatTanggal(DateTime)` | → `yyyy-MM-dd` |
 | `formatJam(TimeOfDay)` | → `HH:mm` (padding nol) |
@@ -404,13 +400,7 @@ tema:
 
 ### `pembantu/info_pengguna.dart`
 
-`simpan(token, username)`, `ambilToken()`, `ambilUsername()`, `hapus()` —
-`hapus()` memanggil `pref.clear()` sehingga seluruh prefs (termasuk data lokal)
-terhapus.
-
-### `pembantu/klien_api.dart` / `pembantu/penyimpanan_lokal.dart`
-
-Lihat bagian 4.4.
+`simpan(token, username)`, `ambilToken()`, `ambilUsername()`, `hapus()`.
 
 ---
 
@@ -423,7 +413,7 @@ flutter pub get
 flutter run            # device/emulator
 ```
 
-Login: `admin` / `admin`.
+Login: `admin` / `admin`. Tidak butuh internet.
 
 ### 8.2 Perintah verifikasi (jalankan sebelum commit)
 
@@ -442,82 +432,85 @@ baru, bukan error.
 | File | Cakupan |
 | --- | --- |
 | `test/widget_test.dart` | layar `Masuk` tampil |
-| `test/layanan_lokal_test.dart` | `KlienApi.apiSiap == false`; CRUD lapangan/pelanggan/booking lokal; `ambil()` id tak ada melempar `FormatException` |
+| `test/layanan_lokal_test.dart` | CRUD lapangan, pelanggan, booking (tambah → baca → ubah → hapus) + `ambil()` id tak ada melempar `FormatException` |
+| `test/info_pengguna_test.dart` | logout menghapus sesi, data CRUD lokal tetap ada |
 
 Test memakai `SharedPreferences.setMockInitialValues({})` di `setUp()`, jadi
-tidak menyentuh penyimpanan asli dan tidak butuh jaringan.
+tidak menyentuh penyimpanan asli.
 
 ### 8.4 Konvensi kode
 
 - Bahasa Indonesia untuk nama file, kelas, fungsi, komentar, dan teks UI.
 - Penamaan: file `snake_case.dart`, kelas `PascalCase`, variabel/fungsi
-  `camelCase`, konstanta `camelCase` (`warnaUtama`, `urlAkunA`).
+  `camelCase`, konstanta `camelCase` (`warnaUtama`).
 - Akhiran arti: `Layanan*` = akses data, `Halaman*` = daftar, `Detail*` =
-  rincian, `Form*` = tambah/ubah, `*_item.dart` = kartu baris, `*_pengguna` /
-  `alat` / `tema` = helper.
+  rincian, `Form*` = tambah/ubah, `*_item.dart` = kartu baris.
 - Satu file satu kelas utama, mengikuti nama file.
 - Semua teks UI `const` bila memungkinkan; widget lintas halaman dipindah ke
   `komponen/`, helper murni ke `pembantu/alat.dart`.
-- Jangan pernah panggil `Dio`/`SharedPreferences` dari `tampilan/` — selalu
-  lewat `layanan/`.
+- Jangan pernah panggil `SharedPreferences` dari `tampilan/` — selalu lewat
+  `layanan/`.
 
-### 8.5 Menambah resource (tabel) baru
+### 8.5 Menambah tabel baru
 
-Contoh: tabel `lapangan` → `turnamen`.
+Contoh: `lapangan` → `turnamen`.
 
 1. Buat `model/turnamen.dart` dengan field JSON, `fromJson`, `toJson`
    (tanpa `id`), default aman.
-2. Buat `layanan/layanan_turnamen.dart` dengan 5 metode `daftar`, `ambil`,
-   `tambah`, `ubah`, `hapus`, masing-masing bercabang
-   `if (!KlienApi.apiSiap)` → `PenyimpananLokal('turnamen')`, else → `Dio`.
-3. Daftarkan resource di project mockapi (nama resource = nama endpoint, mis.
-   `/turnamen`).
-4. Buat `tampilan/turnamen/halaman_turnamen.dart`, `detail_turnamen.dart`,
-   `form_turnamen.dart`; pakai `tampilanGagal`, `barisDetail`, `TombolLebar`,
-   pola `pop(context, hasil)`.
-5. Buat `komponen/turnamen_item.dart` bila perlu kartu baris.
-6. Tambahkan pintasan di `beranda.dart` dan menu di `menu_samping.dart`.
-7. Tambahkan test CRUD di `test/layanan_lokal_test.dart`.
+2. Buat `layanan/layanan_turnamen.dart` berisi 5 metode `daftar`, `ambil`,
+   `tambah`, `ubah`, `hapus` yang memakai `PenyimpananLokal('turnamen')`.
+3. Buat `tampilan/turnamen/halaman_*.dart`, `detail_*.dart`, `form_*.dart`;
+   pakai `tampilanGagal`, `barisDetail`, `TombolLebar`, pola
+   `pop(context, hasil)`.
+4. Buat `komponen/turnamen_item.dart` bila perlu kartu baris.
+5. Tambahkan pintasan di `beranda.dart` dan menu di `menu_samping.dart`.
+6. Tambahkan test CRUD di `test/layanan_lokal_test.dart`.
 
-### 8.6 Menambah field baru
+### 8.6 Menambah field baru / mengubah penyimpanan
+
+**Field baru:**
 
 1. Tambahkan field di kelas model + masukkan ke `fromJson` (dengan default
    aman) dan `toJson`.
-2. Tambahkan kolom di resource mockapi (nama & tipe harus persis).
-3. Tambahkan widget input di `form_*.dart` + validator.
-4. Tambahkan baris `barisDetail(...)` di `detail_*.dart` bila perlu ditampilkan.
-5. Tambahkan asersi field di test lokal.
+2. Tambahkan widget input di `form_*.dart` + validator.
+3. Tambahkan baris `barisDetail(...)` di `detail_*.dart` bila perlu ditampilkan.
+4. Tambahkan asersi field di test lokal.
+5. Data lama yang belum punya field ini tetap terbaca karena `fromJson` memberi
+   default.
 
-### 8.7 Menghubungkan ke mockapi.io
+**Ganti media penyimpanan (mis. ke SQLite):** tulis ulang
+`pembantu/penyimpanan_lokal.dart` dengan API yang sama
+(`daftar/ambil/tambah/ubah/hapus`) — `layanan/` dan seluruh UI tidak berubah.
 
-1. Buat project di [mockapi.io](https://mockapi.io), buat resource persis
-   `lapangan`, `pelanggan`, `booking` dengan field sesuai bagian 6.
-2. Buka `lib/pembantu/klien_api.dart`, isi:
+**Reset seluruh data lokal** (mis. untuk demo):
 
-   ```dart
-   const String urlAkunA = 'https://XXXXXXXX.mockapi.io/api/v1'; // lapangan, pelanggan
-   const String urlAkunB = 'https://XXXXXXXX.mockapi.io/api/v1'; // booking
-   ```
+```dart
+final pref = await SharedPreferences.getInstance();
+await pref.remove('lokal_lapangan');
+await pref.remove('lokal_pelanggan');
+await pref.remove('lokal_booking');
+```
 
-   Satu project saja → isi kedua URL dengan nilai yang sama.
-3. `KlienApi.apiSiap` otomatis menjadi `true` → aplikasi langsung memakai API
-   (data lokal tidak ikut terbawa).
-4. Format umum: `https://<id-project>.mockapi.io/api/v1`.
+### 8.7 Catatan logout
 
-### 8.8 Build release Android
+`InfoPengguna().hapus()` (dipakai tombol **Keluar**) hanya menghapus kunci
+`token` dan `username`. Data CRUD lokal (`lokal_lapangan`, `lokal_pelanggan`,
+`lokal_booking`) ikut terhapus hanya bila di-uninstall atau kamu memanggil
+`pref.clear()` sendiri.
 
-- Permission internet sudah ada di
-  `android/app/src/main/AndroidManifest.xml` (`INTERNET`).
-- Nama tampilan aplikasi ada di atribut `android:label` manifest
-  (saat ini `flutter_application_1`; ganti jadi `PadelKu` bila perlu).
+### 8.8 Ganti warna tema
+
+Buka `lib/pembantu/tema.dart`, ubah 4 konstanta di paling atas (tabel bagian 7).
+
+### 8.9 Build
 
 ```bash
 flutter build apk --release
 ```
 
-### 8.9 Ganti warna tema
-
-Buka `lib/pembantu/tema.dart`, ubah 4 konstanta di paling atas (tabel bagian 7).
+Aplikasi tidak memakai jaringan, jadi tidak ada permission internet yang
+diperlukan. Nama tampilan aplikasi ada di atribut `android:label` manifest
+(saat ini `flutter_application_1`; ganti jadi `PadelKu` bila perlu).
 
 ---
 
@@ -525,13 +518,13 @@ Buka `lib/pembantu/tema.dart`, ubah 4 konstanta di paling atas (tabel bagian 7).
 
 | Gejala | Penyebab | Solusi |
 | --- | --- | --- |
-| Semua halaman gagal muat / DNS error di console | URL mockapi masih `GANTI_ID_...` | isi `klien_api.dart` (bagian 8.7), atau biarkan — mode lokal aktif otomatis |
-| Data hilang setelah logout | `InfoPengguna().hapus()` memakai `pref.clear()` | normal; logout menghapus data lokal |
+| Data hilang setelah logout | — | logout hanya menghapus sesi, data lokal aman (bagian 8.7) |
 | Dropdown "The provided value is not contained in the list" | id lapangan/pelanggan sudah dihapus | sudah ditangani di `FormBooking._muatPilihan()` |
-| Gagal hapus/simpan, ada snackbar merah | jaringan/API atau validasi form | cek URL, resource mockapi, dan pesan validasi |
-| Build release tidak bisa akses internet | permission hilang | pastikan `<uses-permission android:name="android.permission.INTERNET"/>` ada |
-| `!` di ringkasan beranda | salah satu `daftar()` melempar error | periksa URL API, tarik layar ke bawah untuk reload |
+| Tampilan gagal muat / tombol "Coba Lagi" | jarang terjadi pada penyimpanan lokal; bisa dari prefs terkorupsi | reset data (bagian 8.6) |
+| `!` di ringkasan beranda | salah satu `daftar()` melempar error | tarik layar ke bawah untuk reload |
+| Form tidak bisa simpan | validasi form gagal | baca pesan merah di bawah field |
 | Warning `value` deprecated pada form | Flutter versi baru | hanya warning; ganti `value:` jadi `initialValue:` bila ingin bersih |
+| Data tertinggal setelah uninstall/reinstall | `shared_preferences` ikut terhapus | normal; data lokal menempel pada instalasi aplikasi |
 
 ---
 
@@ -539,9 +532,8 @@ Buka `lib/pembantu/tema.dart`, ubah 4 konstanta di paling atas (tabel bagian 7).
 
 - Login dummy: `admin` / `admin` (bukan autentikasi sungguhan, token hanya
   penanda "sudah login").
+- Seluruh CRUD disimpan lokal; tidak ada koneksi internet sama sekali.
 - Logika booking (bentrok jadwal, kapasitas lapangan) belum divalidasi —
   `total_bayar` hanya `harga_per_jam × durasi`.
-- Kolom `id` dibuat otomatis oleh mockapi.
 - Peringatan `value is deprecated` pada `DropdownButtonFormField` hanya
   warning, aplikasi tetap jalan.
-# padelku

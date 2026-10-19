@@ -21,8 +21,10 @@ class InfoPengguna {
   }
 
   /// Dipakai saat Keluar (logout).
+  /// Hanya sesi yang dihapus, data CRUD lokal tetap tersimpan.
   Future<void> hapus() async {
     final pref = await SharedPreferences.getInstance();
-    await pref.clear();
+    await pref.remove(_kToken);
+    await pref.remove(_kUsername);
   }
 }

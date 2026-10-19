@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Ubah nilai dari API (int/double/String) menjadi int.
+/// Ubah nilai dari luar (int/double/String) menjadi int.
 int keInt(dynamic nilai) {
   if (nilai is num) return nilai.toInt();
   return int.tryParse('$nilai') ?? 0;
@@ -87,7 +87,7 @@ class TombolLebar extends StatelessWidget {
   }
 }
 
-/// Tampilan saat gagal memuat data dari API.
+/// Tampilan saat gagal memuat data.
 Widget tampilanGagal(VoidCallback ulang) {
   return Center(
     child: Padding(
@@ -98,7 +98,7 @@ Widget tampilanGagal(VoidCallback ulang) {
           const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
           const SizedBox(height: 12),
           const Text(
-            'Gagal memuat data.\nPeriksa koneksi dan URL API di klien_api.dart.',
+            'Gagal memuat data.\nCoba lagi.',
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 12),

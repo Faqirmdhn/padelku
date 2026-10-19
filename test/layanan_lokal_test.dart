@@ -4,7 +4,6 @@ import 'package:flutter_application_1/layanan/layanan_pelanggan.dart';
 import 'package:flutter_application_1/model/booking.dart';
 import 'package:flutter_application_1/model/lapangan.dart';
 import 'package:flutter_application_1/model/pelanggan.dart';
-import 'package:flutter_application_1/pembantu/klien_api.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -13,10 +12,6 @@ void main() {
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
-  });
-
-  test('URL mockapi masih placeholder sehingga mode lokal aktif', () {
-    expect(KlienApi.apiSiap, isFalse);
   });
 
   test('CRUD lapangan jalan tanpa jaringan', () async {
